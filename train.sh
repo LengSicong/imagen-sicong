@@ -1,7 +1,7 @@
 export PYTHONWARNINGS="ignore"
 accelerate launch imagen.py --train \
                             --source ./dataset \
-                            --epoch 20 \
+                            --epoch 10 \
                             --wandb \
                             --no_patching \
                             --samples_out ./outputs/unet1_cond3.0_sample512_start64/samples \
