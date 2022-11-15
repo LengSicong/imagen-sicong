@@ -1,0 +1,20 @@
+accelerate launch imagen.py --train \
+                            --source ./dataset \
+                            --epoch 20 \
+                            --wandb \
+                            --no_patching \
+                            --samples_out ./ouputs/unet1_cond3.0_sample512_start64/samples \
+                            --imagen ./outputs/unet1_cond3.0_sample512_start64/ckps/imagen.pth \ 
+                            --self_cond \
+                            --cond_scale 3.0 \
+                            --test_pkl ./dataset/test_pkl/0.pkl \
+                            --text_encoder t5-large \
+                            --pretrained t5-large \
+                            --batch_size 2 \
+                            --micro_batch_size 2 \
+                            --sample_steps 512 \
+                            --start_size 64 \
+                            --num_unets 1 \
+                            --train_unet 1 \
+                            --sample_unet 1 \
+                            --sample_rate 2500 
