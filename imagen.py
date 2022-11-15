@@ -814,7 +814,7 @@ def train(args):
         if epoch % 2 == 0:
             path = args.imagen.split('.pth')[0] + "_ep" + str(epoch) + ".pth"
             trainer.save(f"{path}")
-            wandb.save(path)
+            # wandb.save(path)
 
             if args.device == "cuda":
                 # prevents OOM on memory constrained devices
