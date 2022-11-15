@@ -468,15 +468,16 @@ def make_training_samples(cond_images, styles, trainer, args, epoch, step, epoch
     #                 '1girl, blue_dress, eyes_closed, blonde_hair',
     #                 '1boy, black_hair',
     #                 '1girl, wristwatch, red_hair']
-    with (open(args.test_pkl, "rb")) as openfile:
-        data = pickle.load(openfile)
-        inpaint_text = data['text']
-        inpaint_mask = data['inpaint_mask'].unsqueeze(0).cuda()
-        inpaint_init_image = data['inpaint_image']
-    # inpaint_images = torch.randn(1, 3, 256, 256).cuda()
-    inpaint_images = torch.empty(4, 3, 256, 256).fill_(255.).cuda()
-    inpaint_masks = torch.cat([inpaint_mask]*4, dim=0)
+    # with (open(args.test_pkl, "rb")) as openfile:
+    #     data = pickle.load(openfile)
+    #     inpaint_text = data['text']
+    #     inpaint_mask = data['inpaint_mask'].unsqueeze(0).cuda()
+    #     inpaint_init_image = data['inpaint_image']
+    # # inpaint_images = torch.randn(1, 3, 256, 256).cuda()
+    # inpaint_images = torch.empty(4, 3, 256, 256).fill_(255.).cuda()
+    # inpaint_masks = torch.cat([inpaint_mask]*4, dim=0)
 
+    inpaint_text = 'The master room should be at north side with about 200 sqft and the aspect ratio of 8 over 9. The master room should have an en-suite bathroom. Can you make bathroom at south west corner with around 50 sqft and the aspect ratio of 9 over 7? The bathroom can be used by guest. Can you make living room  with approx 800 sqft and the aspect ratio of 5 over 12? Make common room at south side with around 150 sqft and the aspect ratio of 4 over 3. The common room should have an en-suite bathroom. I would like to have kitchen at south side with approx 50 sqft and the aspect ratio of 15 over 16. Make balcony at north side with approx 100 sqft and the aspect ratio of 13 over 5.'
     sample_texts = [inpaint_text]*4 
 
     trainer.accelerator.wait_for_everyone()
@@ -511,26 +512,40 @@ def make_training_samples(cond_images, styles, trainer, args, epoch, step, epoch
         text_embeds = torch.unsqueeze(text_embeds, 1)
         sample_texts = None
 
+    # with trainer.accelerator.autocast():
+    #     with torch.no_grad():
+    #         imagen_eval = get_imagen(args)
+    #         if args.imagen is not None and os.path.isfile(args.imagen):
+    #             print(f"Loading model: {args.imagen}")
+    #             with trainer.fs.open(args.imagen) as f:
+    #                 loaded_obj = torch.load(f, map_location='cpu')
+    #             imagen_eval.load_state_dict(loaded_obj['model'])
+    #             sample_images = imagen_eval.sample(texts=sample_texts,
+    #                                     device="cuda:0",
+    #                                     cond_scale=args.cond_scale,
+    #                                     stop_at_unet_number=args.train_unet)
+    #             # sample_images = trainer.accelerator.gather(sample_images)
+    # # restore train image sizes:
+    # trainer.imagen.image_sizes = train_image_sizes
+
     with trainer.accelerator.autocast():
         sample_images = trainer.sample(texts=sample_texts,
-                                       text_embeds=text_embeds,
-                                       cond_images=sample_cond_images,
-                                       cond_scale=args.cond_scale,
-                                       return_all_unet_outputs=True,
-                                       stop_at_unet_number=args.train_unet)
-    #     inpainted_images = trainer.sample(texts=sample_texts,
-    #                                    cond_scale=args.cond_scale,
-    #                                    return_all_unet_outputs=True,
-    #                                    stop_at_unet_number=args.train_unet,
-    #                                    inpaint_images = inpaint_images,
-    #                                    inpaint_masks = inpaint_masks)
-    # inpainted_images = inpainted_images[0]
-    # inpainted_images = transforms.Resize(args.size)(inpainted_images)
-    # grid = make_grid(inpainted_images, nrow=disp_size, normalize=False, range=(-1, 1))
-    # VTF.to_pil_image(grid).save(os.path.join(args.samples_out, f"imagen_{epoch}_{int(step / epoch)}_loss{epoch_loss}_inpaint.png"))
-
+                                    text_embeds=text_embeds,
+                                    cond_images=sample_cond_images,
+                                    cond_scale=args.cond_scale,
+                                    return_all_unet_outputs=True,
+                                    stop_at_unet_number=args.train_unet)
     # restore train image sizes:
     trainer.imagen.image_sizes = train_image_sizes
+    
+    # sample_images = trainer.sample(texts=sample_texts,
+    #                                    text_embeds=text_embeds,
+    #                                    cond_images=sample_cond_images,
+    #                                    cond_scale=args.cond_scale,
+    #                                    return_all_unet_outputs=True,
+    #                                    stop_at_unet_number=args.train_unet)
+
+    # 
 
     final_samples = None
 
@@ -557,6 +572,7 @@ def make_training_samples(cond_images, styles, trainer, args, epoch, step, epoch
         sample_poses0 = transforms.Resize(args.size)(sample_style_images)
         sample_images = torch.cat([sample_images.cpu(), sample_poses0.cpu()])
 
+    print(sample_images.size())
     grid = make_grid(sample_images, nrow=disp_size, normalize=False, range=(-1, 1))
     VTF.to_pil_image(grid).save(os.path.join(args.samples_out, f"imagen_{epoch}_{int(step / epoch)}_loss{epoch_loss}.png"))
 
@@ -617,6 +633,7 @@ def train(args):
         precision = "bf16"
 
     trainer = ImagenTrainer(imagen, precision=precision, lr=args.lr)
+    # print(trainer.fs)
 
     if args.imagen is not None and os.path.isfile(args.imagen):
         print(f"Loading model: {args.imagen}")
@@ -776,23 +793,25 @@ def train(args):
                 if args.wandb:
                     wandb.log({"loss": loss, "epoch_loss": epoch_loss_disp})
 
-                if step % args.sample_rate == 0:
-                    if not args.no_sample:
-                        make_training_samples(cond_images, style_images, trainer, args, epoch,
-                                              trainer.num_steps_taken(args.train_unet),
-                                              epoch_loss_disp)
+                # if step % args.sample_rate == 0:
+                #     if not args.no_sample:
+                #         make_training_samples(cond_images, style_images, trainer, args, epoch,
+                #                               trainer.num_steps_taken(args.train_unet),
+                #                               epoch_loss_disp)
                     # if args.imagen is not None:
                     #     trainer.save(args.imagen)
         # END OF EPOCH
+        if args.imagen is not None:
+            trainer.save(args.imagen)
+
         if not args.no_sample:
             make_training_samples(cond_images, style_images, trainer, args, epoch,
                                   trainer.num_steps_taken(args.train_unet),
                                   epoch_loss_disp)
 
-        if args.imagen is not None:
-            trainer.save(args.imagen)
         
-        if epoch % 5 == 0:
+        
+        if epoch % 1 == 0:
             path = args.imagen.split('.pth')[0] + "_ep" + str(epoch) + ".pth"
             trainer.save(f"{path}")
 
