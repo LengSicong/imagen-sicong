@@ -255,7 +255,9 @@ def sample(args):
         style_image = style_image.repeat(args.num_samples, 1, 1, 1).to(args.device)
 
     text_embeds = None
-    sample_texts = args.tags
+    # sample_texts = args.tags
+    inpaint_text = 'The master room should be at north side with about 200 sqft and the aspect ratio of 8 over 9. The master room should have an en-suite bathroom. Can you make bathroom at south west corner with around 50 sqft and the aspect ratio of 9 over 7? The bathroom can be used by guest. Can you make living room  with approx 800 sqft and the aspect ratio of 5 over 12? Make common room at south side with around 150 sqft and the aspect ratio of 4 over 3. The common room should have an en-suite bathroom. I would like to have kitchen at south side with approx 50 sqft and the aspect ratio of 15 over 16. Make balcony at north side with approx 100 sqft and the aspect ratio of 13 over 5.'
+    sample_texts = [inpaint_text]*4 
     if args.embeddings is not None:
         sample_texts = args.embeddings
         text_embeds = get_text_embeddings(sample_texts, text_encoder=args.text_encoder)
@@ -480,7 +482,7 @@ def make_training_samples(cond_images, styles, trainer, args, epoch, step, epoch
     inpaint_text = 'The master room should be at north side with about 200 sqft and the aspect ratio of 8 over 9. The master room should have an en-suite bathroom. Can you make bathroom at south west corner with around 50 sqft and the aspect ratio of 9 over 7? The bathroom can be used by guest. Can you make living room  with approx 800 sqft and the aspect ratio of 5 over 12? Make common room at south side with around 150 sqft and the aspect ratio of 4 over 3. The common room should have an en-suite bathroom. I would like to have kitchen at south side with approx 50 sqft and the aspect ratio of 15 over 16. Make balcony at north side with approx 100 sqft and the aspect ratio of 13 over 5.'
     sample_texts = [inpaint_text]*4 
 
-    trainer.accelerator.wait_for_everyone()
+    # trainer.accelerator.wait_for_everyone()
 
     if args.device == "cuda":
         torch.cuda.empty_cache()
@@ -512,24 +514,25 @@ def make_training_samples(cond_images, styles, trainer, args, epoch, step, epoch
         text_embeds = torch.unsqueeze(text_embeds, 1)
         sample_texts = None
 
-    # with trainer.accelerator.autocast():
+    # if trainer.accelerator.is_main_process:
+    #     print("1")
     #     with torch.no_grad():
     #         imagen_eval = get_imagen(args)
     #         if args.imagen is not None and os.path.isfile(args.imagen):
+    #             print("0")
     #             print(f"Loading model: {args.imagen}")
     #             with trainer.fs.open(args.imagen) as f:
     #                 loaded_obj = torch.load(f, map_location='cpu')
     #             imagen_eval.load_state_dict(loaded_obj['model'])
     #             sample_images = imagen_eval.sample(texts=sample_texts,
-    #                                     device="cuda:0",
     #                                     cond_scale=args.cond_scale,
     #                                     stop_at_unet_number=args.train_unet)
     #             # sample_images = trainer.accelerator.gather(sample_images)
     # # restore train image sizes:
     # trainer.imagen.image_sizes = train_image_sizes
 
-    with trainer.accelerator.autocast():
-        sample_images = trainer.sample(texts=sample_texts,
+    
+    sample_images = trainer.sample(texts=sample_texts,
                                     text_embeds=text_embeds,
                                     cond_images=sample_cond_images,
                                     cond_scale=args.cond_scale,
@@ -792,33 +795,38 @@ def train(args):
 
                 if args.wandb:
                     wandb.log({"loss": loss, "epoch_loss": epoch_loss_disp})
-
+                
                 # if step % args.sample_rate == 0:
-                #     if not args.no_sample:
-                #         make_training_samples(cond_images, style_images, trainer, args, epoch,
-                #                               trainer.num_steps_taken(args.train_unet),
-                #                               epoch_loss_disp)
-                    # if args.imagen is not None:
-                    #     trainer.save(args.imagen)
+                #     if trainer.accelerator.is_main_process:
+                #         if not args.no_sample:
+                #             make_training_samples(cond_images, style_images, trainer, args, epoch,
+                #                                 trainer.num_steps_taken(args.train_unet),
+                #                                 epoch_loss_disp)
+                #     # if args.imagen is not None:
+                #     #     trainer.save(args.imagen)
+                
+                # trainer.accelerator.wait_for_everyone()
         # END OF EPOCH
         if args.imagen is not None:
             trainer.save(args.imagen)
 
         if not args.no_sample:
-            make_training_samples(cond_images, style_images, trainer, args, epoch,
+            if trainer.accelerator.is_main_process:
+                make_training_samples(cond_images, style_images, trainer, args, epoch,
                                   trainer.num_steps_taken(args.train_unet),
                                   epoch_loss_disp)
 
         
-        
-        if epoch % 2 == 0:
-            path = args.imagen.split('.pth')[0] + "_ep" + str(epoch) + ".pth"
-            trainer.save(f"{path}")
-            # wandb.save(path)
+        trainer.accelerator.wait_for_everyone()
 
-            if args.device == "cuda":
-                # prevents OOM on memory constrained devices
-                torch.cuda.empty_cache()
+        # if epoch % 8 == 0:
+        #     path = args.imagen.split('.pth')[0] + "_ep" + str(epoch) + ".pth"
+        #     trainer.save(f"{path}")
+        #     # wandb.save(path)
+
+        #     if args.device == "cuda":
+        #         # prevents OOM on memory constrained devices
+        #         torch.cuda.empty_cache()
 
 
 class LineByLineTextDataset(Dataset):
